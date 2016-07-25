@@ -364,8 +364,14 @@ public class FoDAPI {
 
 	public Map<String, String> getApplicationList() throws IOException {
 		final String METHOD_NAME = CLASS_NAME+".getApplicationList";
+
+		PrintStream out = FodBuilder.getLogger();
+		if( null == out )
+		{
+			out = System.out;
+		}
 		
-		String endpoint = baseUrl + "/api/v1/Application/?fields=applicationId,applicationName,isMobile&limit=9999"; //TODO make this consistent elsewhere by a global config
+		String endpoint = baseUrl + "/api/v3/applications/?fields=applicationId,applicationName,applicationTypeId,applicationType";
 		HttpGet connection = (HttpGet) getHttpUriRequest("GET",endpoint);
 		InputStream is = null;
 
@@ -374,21 +380,25 @@ public class FoDAPI {
 			HttpResponse response = getHttpClient().execute(connection);
 			is = response.getEntity().getContent();
 			StringBuffer buffer = collectInputStream(is);
-			JsonArray arr = getDataJsonArray(buffer);
+			JsonArray arr = getItemJsonArray(buffer);
 			Map<String, String> map = new TreeMap<String, String>();
 			for (int ix = 0; ix < arr.size(); ix++) {
 				JsonElement entity = arr.get(ix);
 				JsonObject obj = entity.getAsJsonObject();
 				JsonPrimitive name = obj.getAsJsonPrimitive("applicationName");
 				JsonPrimitive id = obj.getAsJsonPrimitive("applicationID");
-				JsonPrimitive isMobile = obj.getAsJsonPrimitive("isMobile");
+				JsonPrimitive appTypeId = obj.getAsJsonPrimitive("applicationTypeId");
+				JsonPrimitive appType = obj.getAsJsonPrimitive("applicationType");
 
 				if (map.containsKey(name.getAsString())) {
 					continue;
 				}
-				if (!isMobile.getAsBoolean()) {
+
+				out.println("app_name: "+name.getAsString()+"type:"+appType.getAsString()+"("+appTypeId.getAsString()+")");
+
+				//if (!isMobile.getAsBoolean()) {
 					map.put(name.getAsString(), id.getAsString());
-				}
+				//}
 			}
 			return map;
 		} finally {
@@ -1141,6 +1151,17 @@ public class FoDAPI {
 		JsonElement jsonElement = parser.parse(responseString);
 		JsonObject dataObject = jsonElement.getAsJsonObject();
 		JsonElement dataElement = dataObject.getAsJsonArray("data");
+		JsonArray arr = dataElement.getAsJsonArray();
+		return arr;
+	}
+
+	protected JsonArray getItemJsonArray(StringBuffer response)
+	{
+		String responseString = response.toString();
+		JsonParser parser = new JsonParser();
+		JsonElement jsonElement = parser.parse(responseString);
+		JsonObject dataObject = jsonElement.getAsJsonObject();
+		JsonElement dataElement = dataObject.getAsJsonArray("items");
 		JsonArray arr = dataElement.getAsJsonArray();
 		return arr;
 	}
