@@ -791,10 +791,10 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 		private transient FoDAPI api;
 		private transient Object apiLockMonitor = new Object();
 
-		private transient Long releaseListRetentionTime = 2l*60*1000;
-		private transient List<Release> releaseListCache = null;
-		private transient Long releaseListRetrieveTime = null;
-		private transient Object releaseListLockMonitor = new Object();
+		private transient Long appListRetentionTime = 2L*60*1000;
+		private transient List<Application> appListCache = null;
+		private transient Long appListRetrieveTime = null;
+		private transient Object appListLockMonitor = new Object();
 
 		/**
 		 * In order to load the persisted global configuration, you have to 
@@ -955,7 +955,12 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 				if( api.isLoggedIn() )
 				{
 						out.println(METHOD_NAME+": getting assessment type list");
-						Map<String,String> assessmentTypeList = new TreeMap<String, String>(api.getAssessmentTypeListWithRetry());
+
+						Map<String,String> assessmentTypeList = null;
+						synchronized(this.apiLockMonitor)
+					    {
+						    assessmentTypeList = new TreeMap<String, String>(api.getAssessmentTypeListWithRetry());
+						}
 						
 						if( null != assessmentTypeList && !assessmentTypeList.isEmpty() )
 						{
@@ -1172,7 +1177,7 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 				{
 					this.api.setPrincipal(this.clientId, this.clientSecret);
 				}
-				this.releaseListRetrieveTime = 0l;
+				this.appListRetrieveTime = 0l;
 				out.println(METHOD_NAME+": clientId = "+this.clientId);
 			}
 			
@@ -1184,7 +1189,7 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 				{
 					this.api.setPrincipal(this.clientSecret, this.clientSecret);
 				}
-				this.releaseListRetrieveTime = 0l;
+				this.appListRetrieveTime = 0l;
 			//	out.println(METHOD_NAME+": clientSecret = "+this.clientSecret);
 			}
 			
@@ -1198,7 +1203,7 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 				{
 					this.api.setBaseUrl(this.fodUrl);
 				}
-				this.releaseListRetrieveTime = 0l;
+				this.appListRetrieveTime = 0l;
 				out.println(METHOD_NAME+": fodUrl = "+this.fodUrl);
 			}
 			
@@ -1304,14 +1309,14 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 		{
 			List<String> appNameList = null;
 			
-			refreshReleaseListCache(api);
+			refreshAppListCache(api);
 			
-			if( null != this.releaseListCache && !this.releaseListCache.isEmpty() )
+			if( null != this.appListCache && !this.appListCache.isEmpty() )
 			{
 				appNameList = new LinkedList<String>();
-				for( Release release : this.releaseListCache )
+				for( Application app : this.appListCache )
 				{
-					String appName = release.getApplicationName();
+					String appName = app.getApplicationName();
 					if( null != appName && !appName.isEmpty() 
 							&& !appNameList.contains(appName) )
 					{
@@ -1333,44 +1338,43 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 		{
 			List<String> releaseNameList = null;
 			
-			refreshReleaseListCache(api);
+			//refreshReleaseListCache(api);
 			
-			if( null != this.releaseListCache && !this.releaseListCache.isEmpty() )
-			{
+			//if( null != this.releaseListCache && !this.releaseListCache.isEmpty() )
+			//{
 				releaseNameList = new LinkedList<String>();
-				for( Release release : this.releaseListCache )
+				List<Release> releases = getReleasesWithRetry(api, 5, applicationName);
+				if (null != releases)
 				{
-					String appName = release.getApplicationName();
-					String relName = release.getReleaseName();
-					if( null != relName && !relName.isEmpty() 
-							&& null != appName && appName.equals(applicationName) )
+					for( Release release : releases )
 					{
+						String relName = release.getReleaseName();
 						releaseNameList.add(relName);
 					}
 				}
-			}
+			//}
 			
 			return releaseNameList;
 		}
 
-		protected void refreshReleaseListCache(FoDAPI api)
+		protected void refreshAppListCache(FoDAPI api)
 		{
-				synchronized(this.releaseListLockMonitor)
+				synchronized(this.appListLockMonitor)
 				{
-					if( this.isReleaseListCacheStale() )
+					if( this.isAppListCacheStale() )
 					{
-						List<Release> releases = getReleasesWithRetry(api, 5);
+						List<Application> apps = getAppsWithRetry(api, 5);
 						
-						if( null != releases && !releases.isEmpty() )
+						if( null != apps && !apps.isEmpty() )
 						{
-							this.releaseListCache = releases;
-							this.releaseListRetrieveTime = System.currentTimeMillis();
+							this.appListCache = apps;
+							this.appListRetrieveTime = System.currentTimeMillis();
 						}
 					}
 				}
 		}
 		
-		protected List<Release> getReleasesWithRetry(FoDAPI api, int maxAttempts)
+		protected List<Release> getReleasesWithRetry(FoDAPI api, int maxAttempts, String applicationName)
 		{
 			final String METHOD_NAME = CLASS_NAME + ".getReleasesWithRetry";
 			PrintStream out = getLogger();
@@ -1383,10 +1387,13 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 			
 			while( (null == releases || releases.isEmpty()) && (attempts < maxAttempts) )
 			{
-				out.println(METHOD_NAME+": calling FoDAPI.getReleaseList() ; attempt number "+attempts);
+				out.println(METHOD_NAME+": calling FoDAPI.getReleaseList("+applicationName+") ; attempt number "+attempts);
 				try
 				{
-					releases = api.getReleaseList();
+					synchronized(this.apiLockMonitor)
+					{
+						releases = api.getReleaseList(applicationName);
+					}
 				}
 				catch (IOException e)
 				{
@@ -1407,20 +1414,61 @@ public class FodBuilder extends Recorder implements SimpleBuildStep
 			
 			return releases;
 		}
-		
-		protected boolean isReleaseListCacheStale()
+
+		protected List<Application> getAppsWithRetry(FoDAPI api, int maxAttempts)
 		{
-			final String METHOD_NAME = CLASS_NAME+".isReleaseListCacheStale";
+			final String METHOD_NAME = CLASS_NAME + ".getAppsWithRetry";
+			PrintStream out = getLogger();
+			
+			List<Application> apps = null;
+			int attempts = 0;
+			
+			out.println(METHOD_NAME+": attempting to retrieve new list of application / release names");
+			out.println(METHOD_NAME+": maxAttempts = "+maxAttempts);
+			
+			while( (null == apps || apps.isEmpty()) && (attempts < maxAttempts) )
+			{
+				out.println(METHOD_NAME+": calling FoDAPI.getApplicationList() ; attempt number "+attempts);
+				try
+				{
+					synchronized(this.apiLockMonitor)
+					{
+						apps = api.getApplicationList();
+					}
+				}
+				catch (IOException e)
+				{
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				++attempts;
+			}
+			
+			if( null == apps || apps.isEmpty() )
+			{
+				out.println(METHOD_NAME+": failed to retrieve release list");
+			}
+			else
+			{
+				out.println(METHOD_NAME+": retrieved list of "+apps.size()+" releases from FoD");
+			}
+			
+			return apps;
+		}
+		
+		protected boolean isAppListCacheStale()
+		{
+			final String METHOD_NAME = CLASS_NAME+".isAppListCacheStale";
 			PrintStream out = getLogger();
 			
 		//	out.println(METHOD_NAME+": releaseListCache = "+releaseListCache);
 			
 			boolean returnValue = 
-					null == releaseListCache
-					|| releaseListCache.isEmpty()
-					|| null == releaseListRetrieveTime
-					|| null == releaseListRetentionTime
-					|| (releaseListRetrieveTime+releaseListRetentionTime < System.currentTimeMillis());
+					null == appListCache
+					|| appListCache.isEmpty()
+					|| null == appListRetrieveTime
+					|| null == appListRetentionTime
+					|| (appListRetrieveTime+appListRetentionTime < System.currentTimeMillis());
 			
 		//	out.println(METHOD_NAME+": releaseListCacheStale = "+returnValue);
 			return returnValue;
