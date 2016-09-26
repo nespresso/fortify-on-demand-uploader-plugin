@@ -10,8 +10,8 @@
     tags they use. Views are always organized according to its owner class,
     so it should be straightforward to find them.
   -->
-  
-  
+
+
   <f:section title="HPE Security Fortify on Demand">
     <f:entry title="API Key" field="clientId">
       <f:textbox />
@@ -19,22 +19,25 @@
     <f:entry title="Secret Code" field="clientSecret">
      <f:password />
     </f:entry>
-    
-    
-    
+
+
+
     <f:advanced title="Advanced Settings">
-      
+
       <f:entry title="Polling Interval" description="Scan status check in minutes" field="pollingInterval">
         <f:textbox/>
+      </f:entry>
+      <f:entry title="Restrict application list" description="Filter the application list in the job configuration" field="restrictApplications">
+        <f:select/>
       </f:entry>
       <f:entry title="Fortify on Demand URL" description="Link to HP FOD" field="fodUrl">
         <f:textbox default="https://hpfod.com"/>
       </f:entry>
-      
+
         <f:validateButton title="${%Test Connection}" progress="${%Testing connection to Fortify on Demand...}"
          method="testConnection" with="clientId,clientSecret,fodUrl" />
 
-        
+
     </f:advanced>
   </f:section>
 </j:jelly>
